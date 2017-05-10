@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 
 import numpy as np
@@ -10,9 +11,12 @@ logging.basicConfig(
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
-face_cascade = cv2.CascadeClassifier('cv2_data\haarcascades\haarcascade_frontalface_default.xml')
-# face_cascade = cv2.CascadeClassifier('cv2_data\haarcascades\haarcascade_profileface.xml')
-eye_cascade = cv2.CascadeClassifier('cv2_data\haarcascades\haarcascade_eye_tree_eyeglasses.xml')
+face_cascade = cv2.CascadeClassifier(
+    os.path.join('cv2_data', 'haarcascades', 'haarcascade_frontalface_default.xml')
+)
+eye_cascade = cv2.CascadeClassifier(
+    os.path.join('cv2_data', 'haarcascades', 'haarcascade_eye_tree_eyeglasses.xml')
+)
 
 
 def points_affine_transform(points, mat):
