@@ -12,15 +12,7 @@ IMG_DIR_NAME_FORMAT = '170524_%s_101'
 DETECTION_NAME_FORMAT = 'detection_%s.csv'
 
 IMAGE_SIZE = (1024, 768, 768)  # (x, y, z)
-Z_INFO = {
-    'unit_face_length': 100,
-    'unit_z_pos': 500,
-    'padding': 250
-}
-GAUSSIAN_SIZE = (311, 311)
-MAP_CUMMULATE_LENGTH = 50
-MAP_CUMMULATE_LIMIT = 15
-MAP_FACE_SIZE = (30, 30)  # x, z
+# IMAGE_SIZE = (640, 480, 1)  # (x, y, z)
 
 
 def bound_to_rect(face, ratio_x=1.0, ratio_y=1.0):
@@ -33,9 +25,67 @@ def bound_to_rect(face, ratio_x=1.0, ratio_y=1.0):
 
 
 face_map_list = []
+fgbg = cv2.createBackgroundSubtractorMOG2()
+
+
+def img_overlay(img, faces):
+    GAUSSIAN_SIZE = (111, 111)
+    MAP_CUMMULATE_LENGTH = 50
+    MAP_CUMMULATE_LIMIT = 5
+
+    img_h, img_w, _ = img.shape
+
+    ratio_x = IMAGE_SIZE[0] / img_w
+    ratio_y = IMAGE_SIZE[1] / img_h
+
+    img_orig = img
+    img = cv2.resize(img, IMAGE_SIZE[:2], interpolation=cv2.INTER_AREA)
+    # img_fg = fgbg.apply(img)
+
+    face_map = np.zeros((IMAGE_SIZE[1], IMAGE_SIZE[0]))
+    for face in faces:
+        face_map[int(face['bound_top'] * ratio_y):int(face['bound_bot'] * ratio_y),
+                 int(face['bound_left'] * ratio_x): int(face['bound_right'] * ratio_x)] = 255
+
+        cv2.polylines(
+            img,
+            [bound_to_rect(face, ratio_x, ratio_y)],
+            True,  # is_closed
+            (255, 0, 0),  # color
+            1  # thickness
+        )
+
+    face_map = cv2.GaussianBlur(face_map, GAUSSIAN_SIZE, -0.5)  # TODO : Gaussian may not be proper
+    face_map = np.array(face_map, dtype=np.uint8)
+    face_map_list.append(face_map)
+
+    face_map_overlay_averaged = np.zeros((IMAGE_SIZE[1], IMAGE_SIZE[0]))
+    for iter_face_map in face_map_list[-MAP_CUMMULATE_LENGTH:]:
+        face_map_overlay_averaged += iter_face_map
+    face_map_overlay_averaged /= MAP_CUMMULATE_LIMIT
+
+    face_map_overaly = np.dstack([face_map_overlay_averaged] * 3)
+    face_map_overaly = np.array(face_map_overaly, dtype=np.float) / 255
+    face_map_overaly = np.clip(face_map_overaly, 0.1, 1)
+    face_map_overaly = 1 - face_map_overaly
+
+    merged_img = np.array(img * face_map_overaly, dtype=np.uint8)
+
+    cv2.imshow('Oing', merged_img)
+    # cv2.imshow('Oing FG', img_fg)
 
 
 def convert_to_3d(img, faces):
+    Z_INFO = {
+        'unit_face_length': 100,
+        'unit_z_pos': 500,
+        'padding': 250
+    }
+    GAUSSIAN_SIZE = (311, 311)
+    MAP_CUMMULATE_LENGTH = 50
+    MAP_CUMMULATE_LIMIT = 5
+    MAP_FACE_SIZE = (30, 30)  # x, z
+
     img_h, img_w, _ = img.shape
 
     img_orig = img
@@ -88,12 +138,12 @@ def convert_to_3d(img, faces):
     for face_cord in face_cords:
         face_map[IMAGE_SIZE[2] - face_cord[2], face_cord[0]] = 255
 
-    face_map = cv2.GaussianBlur(face_map, GAUSSIAN_SIZE, 0)  # TODO : Gaussian is not proper
+    face_map = cv2.GaussianBlur(face_map, GAUSSIAN_SIZE, 0)  # TODO : Gaussian may not be proper
     face_map_list.append(face_map)
 
     face_map_averaged = np.zeros((IMAGE_SIZE[2] + 1, IMAGE_SIZE[0] + 1))
-    for i_face_map in face_map_list[-MAP_CUMMULATE_LENGTH:]:
-        face_map_averaged += i_face_map
+    for iter_face_map in face_map_list[-MAP_CUMMULATE_LENGTH:]:
+        face_map_averaged += iter_face_map
     face_map_averaged = np.clip(face_map_averaged, 0, MAP_CUMMULATE_LIMIT * 3)
 
     face_map_averaged *= (1 / np.max(face_map_averaged)) * 255
@@ -108,8 +158,11 @@ def convert_to_3d(img, faces):
         face = cv2.resize(face, MAP_FACE_SIZE)
         x = face_cords[idx][0]
         z = IMAGE_SIZE[2] - face_cords[idx][2]
-        face_map_colored[z - int(MAP_FACE_SIZE[1] / 2):z + int(MAP_FACE_SIZE[1] / 2),
-                         x - int(MAP_FACE_SIZE[0] / 2):x + int(MAP_FACE_SIZE[0] / 2)] = face
+        try:
+            face_map_colored[z - int(MAP_FACE_SIZE[1] / 2):z + int(MAP_FACE_SIZE[1] / 2),
+                             x - int(MAP_FACE_SIZE[0] / 2):x + int(MAP_FACE_SIZE[0] / 2)] = face
+        except ValueError:
+            pass  # sometimes, "x" can exceed the image boundary
 
     cv2.imshow('Oing', img)  # x-y map
     cv2.imshow('Heatmap', face_map_colored)  # x-z map
@@ -141,12 +194,15 @@ def load_dataset(name):
         img = cv2.imread(img_path)
         faces = face_dict[os.path.basename(img_path).lower()]
 
-        convert_to_3d(img, faces)
+        img_overlay(img, faces)
+        # convert_to_3d(img, faces)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    cv2.destroyAllWindows()
+
 
 load_dataset('0900')
 # load_dataset('1030')
-# load_dataset('0900')
+# load_dataset('1430')
